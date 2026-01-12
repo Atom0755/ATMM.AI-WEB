@@ -601,287 +601,285 @@
         </div>
     </div>
 
-    <script type="module">
-        import { createClient } from 'https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/+esm';
+  <script type="module">
+    import { createClient } from 'https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/+esm';
 
-        // 初始化Supabase
-        const SUPABASE_URL = 'https://hrnedqrnzqseuuxmegsb.supabase.co';
-        const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImhybmVkcXJuenFzZXV1eG1lZ3NiIiwicm9sZSI6ImFub24iLCJpYXQiOjE3MzY4NDc5NzgsImV4cCI6MjA1MjQyMzk3OH0.xvlk4y_xDK5UhRo2JUv0QEXD1fFD-f_NsFwfz5TRN0Y';
-        
-        const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
-        window.supabase = supabase;
+    // 1. 初始化 Supabase
+    const SUPABASE_URL = 'https://hrnedqrnzqseuuxmegsb.supabase.co';
+    const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImhybmVkcXJuenFzZXV1eG1lZ3NiIiwicm9sZSI6ImFub24iLCJpYXQiOjE3MzY4NDc5NzgsImV4cCI6MjA1MjQyMzk3OH0.xvlk4y_xDK5UhRo2JUv0QEXD1fFD-f_NsFwfz5TRN0Y';
+    
+    const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+    window.supabase = supabase;
 
-        // 检查认证
-        async function checkAuth() {
-            const { data: { session } } = await supabase.auth.getSession();
-            if (!session) {
-                window.location.href = 'admin-unified.html';
-                return;
-            }
-            
-            document.getElementById('userEmail').textContent = session.user.email;
-            
-            // 加载数据
-            loadKnowledgeBase();
-            loadNews();
-            loadConversations();
+    // --- 核心配置：如果是 ATMM 站，这里填 'atmm'；如果是 USCGCC 站，填 'uscgcc' ---
+    const CURRENT_SITE = 'atmm'; 
+
+    // 2. 检查认证与站点权限
+    async function checkAuth() {
+        const { data: { session } } = await supabase.auth.getSession();
+        if (!session) {
+            window.location.href = 'admin-unified.html';
+            return;
         }
 
-        // 加载知识库
-        window.loadKnowledgeBase = async function() {
-            try {
-                const { data, error } = await supabase
-                    .from('ai_knowledge_base')
-                    .select('*')
-                    .order('created_at', { ascending: false });
+        // 权限硬隔离：检查用户标签
+        const userSite = session.user.user_metadata?.site;
+        if (userSite !== CURRENT_SITE) {
+            alert(`权限错误：您的账号属于 ${userSite || '普通用户'}，无法管理 ${CURRENT_SITE} 站点的后台。`);
+            await supabase.auth.signOut();
+            window.location.href = 'admin-unified.html';
+            return;
+        }
+        
+        document.getElementById('userEmail').textContent = session.user.email + ` (${CURRENT_SITE.toUpperCase()}管理员)`;
+        
+        // 加载数据
+        loadKnowledgeBase();
+        loadNews();
+        loadConversations();
+    }
 
-                if (error) throw error;
+    // 3. 加载知识库 (增加 site_id 过滤)
+    window.loadKnowledgeBase = async function() {
+        try {
+            const { data, error } = await supabase
+                .from('ai_knowledge_base')
+                .select('*')
+                .eq('site_id', CURRENT_SITE) // 👈 过滤当前站点数据
+                .order('created_at', { ascending: false });
 
-                document.getElementById('knowledgeCount').textContent = data?.length || 0;
-                
-                const listDiv = document.getElementById('knowledgeList');
-                if (data && data.length > 0) {
-                    listDiv.innerHTML = data.map(item => `
-                        <div class="item-card">
-                            <div class="item-header">
-                                <div class="item-title">${item.title}</div>
-                                <div class="item-category">${item.category || '未分类'}</div>
+            if (error) throw error;
+
+            document.getElementById('knowledgeCount').textContent = data?.length || 0;
+            
+            const listDiv = document.getElementById('knowledgeList');
+            if (data && data.length > 0) {
+                listDiv.innerHTML = data.map(item => `
+                    <div class="item-card">
+                        <div class="item-header">
+                            <div class="item-title">${item.title}</div>
+                            <div class="item-category">${item.category || '未分类'}</div>
+                        </div>
+                        <div class="item-content">${item.content.substring(0, 150)}...</div>
+                        <div class="item-meta">
+                            <span>${new Date(item.created_at).toLocaleString('zh-CN')}</span>
+                            <div class="item-actions">
+                                <button class="action-btn edit-btn" onclick="editKnowledge('${item.id}')">编辑</button>
+                                <button class="action-btn delete-btn" onclick="deleteKnowledge('${item.id}')">删除</button>
                             </div>
-                            <div class="item-content">${item.content.substring(0, 150)}...</div>
-                            <div class="item-meta">
-                                <span>${new Date(item.created_at).toLocaleString('zh-CN')}</span>
-                                <div class="item-actions">
-                                    <button class="action-btn edit-btn" onclick="editKnowledge('${item.id}')">编辑</button>
-                                    <button class="action-btn delete-btn" onclick="deleteKnowledge('${item.id}')">删除</button>
+                        </div>
+                    </div>
+                `).join('');
+            } else {
+                listDiv.innerHTML = '<div class="empty-state"><div class="empty-state-icon">📦</div><p>暂无本站知识库内容</p></div>';
+            }
+        } catch (error) {
+            console.error('加载知识库失败:', error);
+        }
+    };
+
+    // 4. 添加知识库 (增加 site_id 标记)
+    window.addKnowledge = async function(event) {
+        event.preventDefault();
+        
+        const title = document.getElementById('knowledgeTitle').value;
+        const category = document.getElementById('knowledgeCategory').value;
+        const content = document.getElementById('knowledgeContent').value;
+
+        try {
+            const { error } = await supabase
+                .from('ai_knowledge_base')
+                .insert([{
+                    title,
+                    category,
+                    content,
+                    site_id: CURRENT_SITE, // 👈 自动标记站点
+                    source_type: 'manual'
+                }]);
+
+            if (error) throw error;
+
+            alert('✅ 知识库内容添加成功！');
+            document.getElementById('knowledgeForm').reset();
+            loadKnowledgeBase();
+        } catch (error) {
+            console.error('添加失败:', error);
+            alert('❌ 添加失败：' + error.message);
+        }
+    };
+
+    // 5. 加载新闻 (增加 site_id 过滤)
+    window.loadNews = async function() {
+        try {
+            const { data, error } = await supabase
+                .from('news')
+                .select('*')
+                .eq('site_id', CURRENT_SITE) // 👈 过滤
+                .eq('status', 'pending')
+                .order('created_at', { ascending: false });
+
+            if (error && error.code !== 'PGRST116') throw error;
+
+            document.getElementById('newsCount').textContent = data?.length || 0;
+            
+            const listDiv = document.getElementById('newsList');
+            if (data && data.length > 0) {
+                listDiv.innerHTML = data.map(item => `
+                    <div class="item-card">
+                        <div class="checkbox-wrapper">
+                            <input type="checkbox" class="news-checkbox" data-id="${item.id}">
+                            <div style="flex: 1;">
+                                <div class="item-header">
+                                    <div class="item-title">${item.title}</div>
+                                </div>
+                                <div class="item-content">${item.content?.substring(0, 150)}...</div>
+                                <div class="item-meta">
+                                    <span>${new Date(item.created_at).toLocaleString('zh-CN')}</span>
+                                    <div class="item-actions">
+                                        <button class="action-btn approve-btn" onclick="approveNews('${item.id}')">通过</button>
+                                        <button class="action-btn reject-btn" onclick="rejectNews('${item.id}')">拒绝</button>
+                                    </div>
                                 </div>
                             </div>
                         </div>
-                    `).join('');
-                } else {
-                    listDiv.innerHTML = '<div class="empty-state"><div class="empty-state-icon">📦</div><p>暂无知识库内容</p></div>';
-                }
-            } catch (error) {
-                console.error('加载知识库失败:', error);
+                    </div>
+                `).join('');
+            } else {
+                listDiv.innerHTML = '<div class="empty-state"><div class="empty-state-icon">📭</div><p>暂无本站待审核新闻</p></div>';
             }
-        };
+        } catch (error) {
+            console.error('加载新闻失败:', error);
+        }
+    };
 
-        // 添加知识库
-        window.addKnowledge = async function(event) {
-            event.preventDefault();
+    // 6. 加载AI对话 (增加 site_id 过滤)
+    window.loadConversations = async function() {
+        try {
+            const { data, error } = await supabase
+                .from('ai_conversations')
+                .select('*')
+                .eq('site_id', CURRENT_SITE) // 👈 过滤
+                .order('updated_at', { ascending: false })
+                .limit(50);
+
+            if (error) throw error;
+
+            document.getElementById('conversationsCount').textContent = data?.length || 0;
             
-            const title = document.getElementById('knowledgeTitle').value;
-            const category = document.getElementById('knowledgeCategory').value;
-            const content = document.getElementById('knowledgeContent').value;
-
-            try {
-                const { error } = await supabase
-                    .from('ai_knowledge_base')
-                    .insert([{
-                        title,
-                        category,
-                        content,
-                        source_type: 'manual'
-                    }]);
-
-                if (error) throw error;
-
-                alert('✅ 知识库内容添加成功！');
-                document.getElementById('knowledgeForm').reset();
-                loadKnowledgeBase();
-            } catch (error) {
-                console.error('添加失败:', error);
-                alert('❌ 添加失败：' + error.message);
-            }
-        };
-
-        // 加载新闻
-        window.loadNews = async function() {
-            try {
-                // 这里假设你有一个news表
-                // 如果没有，需要创建
-                const { data, error } = await supabase
-                    .from('news')
-                    .select('*')
-                    .eq('status', 'pending')
-                    .order('created_at', { ascending: false });
-
-                if (error && error.code !== 'PGRST116') throw error;
-
-                document.getElementById('newsCount').textContent = data?.length || 0;
-                
-                const listDiv = document.getElementById('newsList');
-                if (data && data.length > 0) {
-                    listDiv.innerHTML = data.map(item => `
-                        <div class="item-card">
+            const listDiv = document.getElementById('conversationsList');
+            if (data && data.length > 0) {
+                listDiv.innerHTML = data.map(conv => {
+                    const messages = conv.messages || [];
+                    return `
+                        <div class="conversation-item">
                             <div class="checkbox-wrapper">
-                                <input type="checkbox" class="news-checkbox" data-id="${item.id}">
+                                <input type="checkbox" class="conversation-checkbox" data-id="${conv.id}">
                                 <div style="flex: 1;">
                                     <div class="item-header">
-                                        <div class="item-title">${item.title}</div>
+                                        <div class="item-title">${conv.title || '对话记录'}</div>
                                     </div>
-                                    <div class="item-content">${item.content?.substring(0, 150)}...</div>
+                                    <div class="conversation-messages">
+                                        ${messages.slice(-3).map(msg => `
+                                            <div class="conversation-message ${msg.role}">
+                                                <div class="message-role">${msg.role === 'user' ? '👤 用户' : '🤖 AI助手'}</div>
+                                                <div class="message-text">${msg.content.substring(0, 200)}...</div>
+                                            </div>
+                                        `).join('')}
+                                    </div>
                                     <div class="item-meta">
-                                        <span>${new Date(item.created_at).toLocaleString('zh-CN')}</span>
+                                        <span>${new Date(conv.updated_at).toLocaleString('zh-CN')}</span>
                                         <div class="item-actions">
-                                            <button class="action-btn approve-btn" onclick="approveNews('${item.id}')">通过</button>
-                                            <button class="action-btn reject-btn" onclick="rejectNews('${item.id}')">拒绝</button>
+                                            <button class="action-btn approve-btn" onclick="addConversationToKnowledge('${conv.id}')">添加到知识库</button>
+                                            <button class="action-btn reject-btn" onclick="ignoreConversation('${conv.id}')">忽略</button>
                                         </div>
                                     </div>
                                 </div>
                             </div>
                         </div>
-                    `).join('');
-                } else {
-                    listDiv.innerHTML = '<div class="empty-state"><div class="empty-state-icon">📭</div><p>暂无待审核的新闻</p></div>';
-                }
-            } catch (error) {
-                console.error('加载新闻失败:', error);
+                    `;
+                }).join('');
+            } else {
+                listDiv.innerHTML = '<div class="empty-state"><div class="empty-state-icon">💬</div><p>暂无本站对话记录</p></div>';
             }
-        };
+        } catch (error) {
+            console.error('加载对话失败:', error);
+        }
+    };
 
-        // 加载AI对话
-        window.loadConversations = async function() {
-            try {
-                const { data, error } = await supabase
-                    .from('ai_conversations')
-                    .select('*')
-                    .order('updated_at', { ascending: false })
-                    .limit(50);
+    // 7. 对话转知识库 (增加 site_id 标记)
+    window.addConversationToKnowledge = async function(conversationId) {
+        try {
+            const { data: conv, error } = await supabase
+                .from('ai_conversations')
+                .select('*')
+                .eq('id', conversationId)
+                .single();
 
-                if (error) throw error;
+            if (error) throw error;
 
-                document.getElementById('conversationsCount').textContent = data?.length || 0;
-                
-                const listDiv = document.getElementById('conversationsList');
-                if (data && data.length > 0) {
-                    listDiv.innerHTML = data.map(conv => {
-                        const messages = conv.messages || [];
-                        const lastMessage = messages[messages.length - 1];
-                        
-                        return `
-                            <div class="conversation-item">
-                                <div class="checkbox-wrapper">
-                                    <input type="checkbox" class="conversation-checkbox" data-id="${conv.id}">
-                                    <div style="flex: 1;">
-                                        <div class="item-header">
-                                            <div class="item-title">${conv.title || '对话记录'}</div>
-                                        </div>
-                                        <div class="conversation-messages">
-                                            ${messages.slice(-3).map(msg => `
-                                                <div class="conversation-message ${msg.role}">
-                                                    <div class="message-role">${msg.role === 'user' ? '👤 用户' : '🤖 AI助手'}</div>
-                                                    <div class="message-text">${msg.content.substring(0, 200)}${msg.content.length > 200 ? '...' : ''}</div>
-                                                </div>
-                                            `).join('')}
-                                        </div>
-                                        <div class="item-meta">
-                                            <span>${new Date(conv.updated_at).toLocaleString('zh-CN')}</span>
-                                            <div class="item-actions">
-                                                <button class="action-btn approve-btn" onclick="addConversationToKnowledge('${conv.id}')">添加到知识库</button>
-                                                <button class="action-btn reject-btn" onclick="ignoreConversation('${conv.id}')">忽略</button>
-                                            </div>
-                                        </div>
-                                    </div>
-                                </div>
-                            </div>
-                        `;
-                    }).join('');
-                } else {
-                    listDiv.innerHTML = '<div class="empty-state"><div class="empty-state-icon">💬</div><p>暂无AI对话记录</p></div>';
-                }
-            } catch (error) {
-                console.error('加载对话失败:', error);
-            }
-        };
+            const messages = conv.messages || [];
+            const userQuestions = messages.filter(m => m.role === 'user').map(m => m.content).join('\n');
+            const aiAnswers = messages.filter(m => m.role === 'assistant').map(m => m.content).join('\n\n');
 
-        // 添加对话到知识库
-        window.addConversationToKnowledge = async function(conversationId) {
-            try {
-                const { data: conv, error } = await supabase
-                    .from('ai_conversations')
-                    .select('*')
-                    .eq('id', conversationId)
-                    .single();
+            const title = messages.find(m => m.role === 'user')?.content.substring(0, 50) + '...';
+            const content = `问题：\n${userQuestions}\n\n回答：\n${aiAnswers}`;
 
-                if (error) throw error;
+            const { error: insertError } = await supabase
+                .from('ai_knowledge_base')
+                .insert([{
+                    title: title || '从对话生成',
+                    category: '常见问题',
+                    content: content,
+                    site_id: CURRENT_SITE, // 👈 自动标记站点
+                    source_type: 'conversation',
+                    source_id: conversationId
+                }]);
 
-                const messages = conv.messages || [];
-                const userQuestions = messages.filter(m => m.role === 'user').map(m => m.content).join('\n');
-                const aiAnswers = messages.filter(m => m.role === 'assistant').map(m => m.content).join('\n\n');
+            if (insertError) throw insertError;
 
-                const title = messages.find(m => m.role === 'user')?.content.substring(0, 50) + '...';
-                const content = `问题：\n${userQuestions}\n\n回答：\n${aiAnswers}`;
+            alert('✅ 已成功添加到本站知识库！');
+            loadKnowledgeBase();
+            loadConversations();
+        } catch (error) {
+            console.error('添加失败:', error);
+            alert('❌ 添加失败：' + error.message);
+        }
+    };
 
-                const { error: insertError } = await supabase
-                    .from('ai_knowledge_base')
-                    .insert([{
-                        title: title || '从对话生成',
-                        category: '常见问题',
-                        content: content,
-                        source_type: 'conversation',
-                        source_id: conversationId
-                    }]);
+    // --- 以下保持原有的 UI 辅助功能 ---
 
-                if (insertError) throw insertError;
+    window.bulkAddToKnowledge = async function() {
+        const checkboxes = document.querySelectorAll('.conversation-checkbox:checked');
+        if (checkboxes.length === 0) { alert('请先选择对话'); return; }
+        if (!confirm(`确定要批量处理 ${checkboxes.length} 条对话吗？`)) return;
+        for (const checkbox of checkboxes) {
+            await addConversationToKnowledge(checkbox.dataset.id);
+        }
+        alert('✅ 批量添加完成！');
+    };
 
-                alert('✅ 已添加到知识库！');
-                loadKnowledgeBase();
-                loadConversations();
-            } catch (error) {
-                console.error('添加失败:', error);
-                alert('❌ 添加失败：' + error.message);
-            }
-        };
+    window.selectAllConversations = function() {
+        const checkboxes = document.querySelectorAll('.conversation-checkbox');
+        const allChecked = Array.from(checkboxes).every(cb => cb.checked);
+        checkboxes.forEach(cb => cb.checked = !allChecked);
+    };
 
-        // 批量添加到知识库
-        window.bulkAddToKnowledge = async function() {
-            const checkboxes = document.querySelectorAll('.conversation-checkbox:checked');
-            if (checkboxes.length === 0) {
-                alert('请先选择要添加的对话');
-                return;
-            }
+    window.switchTab = function(tabName) {
+        document.querySelectorAll('.tab-btn').forEach(btn => btn.classList.remove('active'));
+        event.target.classList.add('active');
+        document.querySelectorAll('.tab-content').forEach(content => content.classList.remove('active'));
+        document.getElementById(tabName + '-tab').classList.add('active');
+    };
 
-            if (!confirm(`确定要将 ${checkboxes.length} 条对话添加到知识库吗？`)) {
-                return;
-            }
-
-            for (const checkbox of checkboxes) {
-                await addConversationToKnowledge(checkbox.dataset.id);
-            }
-
-            alert('✅ 批量添加完成！');
-        };
-
-        // 全选对话
-        window.selectAllConversations = function() {
-            const checkboxes = document.querySelectorAll('.conversation-checkbox');
-            const allChecked = Array.from(checkboxes).every(cb => cb.checked);
-            checkboxes.forEach(cb => cb.checked = !allChecked);
-        };
-
-        // 切换标签
-        window.switchTab = function(tabName) {
-            // 更新按钮状态
-            document.querySelectorAll('.tab-btn').forEach(btn => {
-                btn.classList.remove('active');
-            });
-            event.target.classList.add('active');
-
-            // 更新内容显示
-            document.querySelectorAll('.tab-content').forEach(content => {
-                content.classList.remove('active');
-            });
-            document.getElementById(tabName + '-tab').classList.add('active');
-        };
-
-        // 退出登录
-        window.logout = async function() {
+    window.logout = async function() {
+        if(confirm("确定退出登录？")) {
             await supabase.auth.signOut();
-            window.location.href = '/'';
-        };
+            window.location.href = 'admin-unified.html';
+        }
+    };
 
-        // 初始化
-        checkAuth();
-    </script>
+    // 初始化启动
+    checkAuth();
+</script>
 </body>
 </html>
