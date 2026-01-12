@@ -467,7 +467,7 @@
         <div class="user-info">
             <span class="user-email" id="userEmail">加载中...</span>
            
-         <button class="logout-btn" onclick="location.href='index.html'">退出</button>   
+         <button class="logout-btn" onclick="logout()">退出</button>   
         </div>
     </div>
 
@@ -618,7 +618,7 @@
     async function checkAuth() {
         const { data: { session } } = await supabase.auth.getSession();
         if (!session) {
-            window.location.href = 'admin-simple.html';
+            window.location.href = '/';
             return;
         }
 
@@ -627,7 +627,7 @@
         if (userSite !== CURRENT_SITE) {
             alert(`权限错误：您的账号属于 ${userSite || '普通用户'}，无法管理 ${CURRENT_SITE} 站点的后台。`);
             await supabase.auth.signOut();
-            window.location.href = 'admin-simple.html';
+            window.location.href = '/';
             return;
         }
         
@@ -874,7 +874,7 @@
     window.logout = async function() {
         if(confirm("确定退出登录？")) {
             await supabase.auth.signOut();
-            window.location.href = 'admin-simple.html';
+            window.location.href = '/';
         }
     };
 
